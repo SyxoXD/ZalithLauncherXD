@@ -28,9 +28,11 @@ val getBuildType = {
 }
 
 val nameId = "com.movtery.zalithlauncher"
+// Keep the Android namespace compatible with the existing source packages, but install this fork separately.
+val appId = "com.syxo.zalithxd"
 val generatedZalithDir = file("$buildDir/generated/source/zalith/java")
-val launcherAPPName = project.findProperty("launcher_app_name") as? String ?: error("The \"launcher_app_name\" property is not set in gradle.properties.")
-val launcherName = project.findProperty("launcher_name") as? String ?: error("The \"launcher_name\" property is not set in gradle.properties.")
+val launcherAPPName = project.findProperty("launcher_app_name") as? String ?: "ZalithXD"
+val launcherName = project.findProperty("launcher_name") as? String ?: "ZalithLauncherXD"
 val launcherVersionCode = (project.findProperty("launcher_version_code") as? String)?.toIntOrNull() ?: error("The \"launcher_version_code\" property is not set as an integer in gradle.properties.")
 val launcherVersionName = project.findProperty("launcher_version_name") as? String ?: error("The \"launcher_version_name\" property is not set in gradle.properties.")
 
@@ -69,7 +71,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = nameId
+        applicationId = appId
         minSdk = 26
         targetSdk = 34
         versionCode = launcherVersionCode
@@ -79,7 +81,7 @@ android {
     }
 
     buildTypes {
-        val storageProviderId = "$nameId.storage_provider"
+        val storageProviderId = "$appId.storage_provider"
 
         getByName("debug") {
             applicationIdSuffix = ".debug"
@@ -216,7 +218,7 @@ tasks.register("generateInfoDistributor") {
     doLast {
         val constantMap = mapOf(
             "CURSEFORGE_API_KEY" to getCFApiKey(),
-            "LAUNCHER_NAME" to project.property("launcher_name").toString(),
+            "LAUNCHER_NAME" to launcherName,
             "APP_NAME" to project.property("launcher_app_name").toString(),
             "BUILD_TYPE" to getBuildType()
         )
