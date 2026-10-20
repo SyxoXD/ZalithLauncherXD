@@ -2,7 +2,6 @@
 // Created by maks on 06.01.2025.
 //
 
-#include <android/api-level.h>
 #include <android/log.h>
 #include <jni.h>
 
@@ -10,8 +9,6 @@
 
 #include <dlfcn.h>
 #include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
 
 extern void* maybe_load_vulkan();
 
@@ -79,6 +76,12 @@ static jlong ndlopen_bugfix(__attribute__((unused)) JNIEnv *env,
 void installLwjglDlopenHook() {
     __android_log_print(ANDROID_LOG_INFO, LWJGL_HOOK_TAG,
                         "Installing LWJGL dlopen() hook");
+
+    if (pojav_environ == NULL) {
+        __android_log_print(ANDROID_LOG_ERROR, LWJGL_HOOK_TAG,
+                            "Pojav runtime environment is unavailable");
+        return;
+    }
 
     JNIEnv* env = pojav_environ->runtimeJNIEnvPtr_JRE;
     if (env == NULL) {
