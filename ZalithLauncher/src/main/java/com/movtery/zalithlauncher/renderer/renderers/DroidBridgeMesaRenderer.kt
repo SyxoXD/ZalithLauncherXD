@@ -14,7 +14,7 @@ class DroidBridgeMesaRenderer : RendererInterface {
 
     override fun getUniqueIdentifier(): String = "b3d64ebd-6903-4a2c-bdd3-9caa1d9fdbe7"
 
-    override fun getRendererName(): String = "DroidBridge Mesa (external EGL)"
+    override fun getRendererName(): String = "DroidBridge Mesa (Adreno / external EGL)"
 
     override fun getRendererEnv(): Lazy<Map<String, String>> = lazy {
         linkedMapOf(
