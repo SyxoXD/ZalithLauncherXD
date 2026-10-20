@@ -51,11 +51,15 @@ static jlong ndlopen_bugfix(__attribute__((unused)) JNIEnv *env,
         __android_log_print(ANDROID_LOG_INFO, LWJGL_HOOK_TAG,
                             "Redirecting Vulkan load request: %s", filename);
         void* handle = maybe_load_vulkan();
-        if (handle == NULL) {
-            __android_log_print(ANDROID_LOG_ERROR, LWJGL_HOOK_TAG,
-                                "Custom Vulkan loader failed for request: %s", filename);
+        if (handle != NULL) {
+            return (jlong) handle;
         }
-        return (jlong) handle;
+
+        /* A custom loader may be unavailable on some devices. Preserve the
+         * standard Android linker path instead of failing the load outright. */
+        __android_log_print(ANDROID_LOG_WARN, LWJGL_HOOK_TAG,
+                            "Custom Vulkan loader failed for %s; falling back to dlopen",
+                            filename);
     }
 
     int mode = (int) jmode;
