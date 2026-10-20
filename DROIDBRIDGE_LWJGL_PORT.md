@@ -1,10 +1,10 @@
 # DroidBridge LWJGL / RenderSpec integration
 
-The fork now includes DBL-derived native input and graphics bridge sources plus a built-in **DroidBridge Mesa (external EGL)** renderer entry. The renderer is separate from the existing GL4ES, Zink, VirGL, Freedreno/OSMesa, and Panfrost choices.
+The fork now includes DBL-derived native input and graphics bridge sources plus a built-in **DroidBridge Mesa (Adreno / external EGL)** renderer entry. The renderer is separate from the existing GL4ES, Zink, VirGL, Freedreno/OSMesa, and Panfrost choices.
 
 ## Selecting the DBL path
 
-In the launcher renderer selection screen choose **DroidBridge Mesa (external EGL)** only when you have a compatible Mesa EGL provider. It configures the DBL freedreno_kgsl native bridge mode and requests the LWJGL proxy soname libGLDroidBridge.so.
+In the launcher renderer selection screen choose **DroidBridge Mesa (Adreno / external EGL)** only on an Adreno/KGSL device and only when you have a compatible Mesa EGL provider. It configures the DBL freedreno_kgsl native bridge mode and requests the LWJGL proxy soname libGLDroidBridge.so.
 
 **Important:** this branch does not contain or bundle libEGL_mesa.so, the Mesa/Gallium driver files, or the libGLDroidBridge.so proxy as a standalone shared library. The proxy name is a sentinel intercepted by the native LWJGL loader hook; the hook must be able to open the real EGL provider. Without a compatible provider, selecting this renderer is expected to fail to create a usable graphics context. Keep using your current renderer when you do not have that provider installed.
 
