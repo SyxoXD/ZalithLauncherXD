@@ -396,17 +396,26 @@ public final class JREUtils {
      */
     private static boolean isDroidBridgeOpenGLProxyEnabled() {
         String value;
+        String renderer;
+        String explicitProvider;
         try {
             value = Os.getenv("DROIDBRIDGE_OPENGL_PROXY");
+            renderer = Os.getenv("POJAV_RENDERER");
+            explicitProvider = Os.getenv("DROIDBRIDGE_RENDERSPEC_EGL");
         } catch (Throwable ignored) {
             return false;
         }
-        return value != null && (
+        boolean enabled = value != null && (
                 "1".equals(value)
                         || "true".equalsIgnoreCase(value)
                         || "yes".equalsIgnoreCase(value)
                         || "on".equalsIgnoreCase(value)
         );
+        // Avoid replacing LWJGL's normal GL wrapper with an EGL handle just because
+        // a custom_env.txt contains the flag. A DBL renderer or explicit provider is required.
+        boolean configured = "freedreno_kgsl".equals(renderer)
+                || (explicitProvider != null && !explicitProvider.trim().isEmpty());
+        return enabled && configured;
     }
 
     private static void launchJavaVM(
