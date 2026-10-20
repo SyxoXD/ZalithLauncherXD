@@ -280,6 +280,25 @@ public final class JREUtils {
                 envMap.put("LIBGL_ES", "3");
             }
         }
+
+        // A custom renderer/provider may ship EGL outside the app's default native-lib dir.
+        // Use the same explicit path for the GL bridge and LWJGL's RenderSpec hook.
+        String proxyFlag = envMap.get("DROIDBRIDGE_OPENGL_PROXY");
+        String renderSpecEgl = envMap.get("DROIDBRIDGE_RENDERSPEC_EGL");
+        boolean proxyEnabled = "1".equals(proxyFlag)
+                || "true".equalsIgnoreCase(proxyFlag)
+                || "yes".equalsIgnoreCase(proxyFlag)
+                || "on".equalsIgnoreCase(proxyFlag);
+        if (proxyEnabled && renderSpecEgl != null && !renderSpecEgl.trim().isEmpty()) {
+            String provider = renderSpecEgl.trim();
+            envMap.put("DROIDBRIDGE_MESA_EGL", provider);
+            envMap.put("POJAVEXEC_EGL", provider);
+            envMap.put("POJAV_EGL_LIBRARY", provider);
+            envMap.put("POJAVEXEC_EGL_LIBRARY", provider);
+            envMap.put("POJAV_RENDERER_LIBRARY", provider);
+            envMap.put("POJAVEXEC_RENDERER", provider);
+            envMap.put("LIB_MESA_NAME", provider);
+        }
     }
 
     private static void setCustomEnv(Map<String, String> envMap) throws Throwable {
@@ -349,6 +368,16 @@ public final class JREUtils {
         if (!renderer) return;
 
         String rendererLib = loadGraphicsLibrary();
+        if (isDroidBridgeOpenGLProxyEnabled()) {
+            try {
+                String renderSpecEgl = Os.getenv("DROIDBRIDGE_RENDERSPEC_EGL");
+                if (renderSpecEgl != null && !renderSpecEgl.trim().isEmpty()) {
+                    rendererLib = renderSpecEgl.trim();
+                }
+            } catch (Throwable throwable) {
+                Logging.e("RENDER_LIBRARY", "Unable to read RenderSpec EGL path; using renderer default", throwable);
+            }
+        }
         RendererPlugin customRenderer = RendererPluginManager.getSelectedRendererPlugin();
 
         if (customRenderer != null) {
