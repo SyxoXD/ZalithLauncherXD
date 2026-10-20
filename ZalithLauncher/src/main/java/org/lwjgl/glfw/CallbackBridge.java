@@ -335,7 +335,7 @@ public class CallbackBridge {
     }
     // Compatibility overload retained for Zalith's custom-control call sites.
     public static void sendKeyPress(int keyCode, int scancode, int modifiers, boolean status) {
-        sendKeyPress(keyCode, '\\u0000', scancode, modifiers, status);
+        sendKeyPress(keyCode, (char) 0, scancode, modifiers, status);
     }
 
     // Compatibility helper retained for existing Pojav/Zalith callers.
