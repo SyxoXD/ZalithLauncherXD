@@ -10,7 +10,7 @@
 #include <dlfcn.h>
 #include <string.h>
 
-extern void* maybe_load_vulkan();
+extern void* maybe_load_vulkan(void);
 
 #define LWJGL_HOOK_TAG "LwjglLinkerHook"
 
@@ -77,7 +77,7 @@ static jlong ndlopen_bugfix(__attribute__((unused)) JNIEnv *env,
 /*
  * Install the LWJGL dlopen hook. The Java signature must remain (JI)J.
  */
-void installLwjglDlopenHook() {
+void installLwjglDlopenHook(void) {
     __android_log_print(ANDROID_LOG_INFO, LWJGL_HOOK_TAG,
                         "Installing LWJGL dlopen() hook");
 
