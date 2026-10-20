@@ -360,6 +360,26 @@ public final class JREUtils {
         }
     }
 
+    /**
+     * Opt in to DroidBridge's RenderSpec EGL-provider hook via custom_env.txt.
+     * Keep the existing renderer library as the native context backend; this
+     * switch only changes LWJGL's requested OpenGL provider soname.
+     */
+    private static boolean isDroidBridgeOpenGLProxyEnabled() {
+        String value;
+        try {
+            value = Os.getenv("DROIDBRIDGE_OPENGL_PROXY");
+        } catch (Throwable ignored) {
+            return false;
+        }
+        return value != null && (
+                "1".equals(value)
+                        || "true".equalsIgnoreCase(value)
+                        || "yes".equalsIgnoreCase(value)
+                        || "on".equalsIgnoreCase(value)
+        );
+    }
+
     private static void launchJavaVM(
             final AppCompatActivity activity,
             String runtimeHome,
@@ -388,7 +408,16 @@ public final class JREUtils {
         //Add automatically generated args
         userArgs.add("-Xms" + AllSettings.getRamAllocation().getValue().getValue() + "M");
         userArgs.add("-Xmx" + AllSettings.getRamAllocation().getValue().getValue() + "M");
-        if (Renderers.INSTANCE.isCurrentRendererValid()) userArgs.add("-Dorg.lwjgl.opengl.libname=" + loadGraphicsLibrary());
+        if (Renderers.INSTANCE.isCurrentRendererValid()) {
+            String lwjglOpenGlLibrary = isDroidBridgeOpenGLProxyEnabled()
+                    ? "libGLDroidBridge.so"
+                    : loadGraphicsLibrary();
+            userArgs.add("-Dorg.lwjgl.opengl.libname=" + lwjglOpenGlLibrary);
+            Logging.i("DynamicLoader", "LWJGL OpenGL library: " + lwjglOpenGlLibrary
+                    + (isDroidBridgeOpenGLProxyEnabled()
+                    ? " (DroidBridge RenderSpec proxy enabled by DROIDBRIDGE_OPENGL_PROXY)"
+                    : ""));
+        }
 
         // Force LWJGL to use the Freetype library intended for it, instead of using the one
         // that we ship with Java (since it may be older than what's needed)
