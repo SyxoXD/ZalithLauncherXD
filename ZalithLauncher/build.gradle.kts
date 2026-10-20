@@ -219,7 +219,7 @@ tasks.register("generateInfoDistributor") {
         val constantMap = mapOf(
             "CURSEFORGE_API_KEY" to getCFApiKey(),
             "LAUNCHER_NAME" to launcherName,
-            "APP_NAME" to project.property("launcher_app_name").toString(),
+            "APP_NAME" to launcherAPPName,
             "BUILD_TYPE" to getBuildType()
         )
         generateJavaClass(generatedZalithDir, "com.movtery.zalithlauncher", "InfoDistributor", constantMap)
