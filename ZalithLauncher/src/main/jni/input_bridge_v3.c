@@ -1,4 +1,22 @@
 /*
+ * Derived from PojavLauncher native bridge code.
+ *
+ * Original project:
+ * https://github.com/PojavLauncherTeam/PojavLauncher
+ *
+ * Original license: GNU Lesser General Public License v3.0,
+ * unless this file or a bundled component states a different license.
+ *
+ * DroidBridge modifications:
+ * Copyright (c) 2026 DNA Mobile Applications.
+ *
+ * This file remains available under the terms of the GNU LGPLv3
+ * unless the original file or bundled component states a different license.
+ *
+ * SPDX-License-Identifier: LGPL-3.0-only
+ */
+
+/*
  * V3 input bridge implementation.
  *
  * Status:
@@ -9,7 +27,7 @@
  * 
  * - Implements glfwSetCursorPos() to handle grab camera pos correctly.
  */
- 
+
 #include <assert.h>
 #include <dlfcn.h>
 #include <jni.h>
@@ -22,6 +40,8 @@
 #include "log.h"
 #include "utils.h"
 #include "environ/environ.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 #define EVENT_TYPE_CHAR 1000
 #define EVENT_TYPE_CHAR_MODS 1001
@@ -60,6 +80,27 @@ jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
         hookExec();
         installLwjglDlopenHook();
         installEMUIIteratorMititgation();
+
+        // Disable SDL3 HIDAPI joystick backend to prevent double detection.
+        // When both HIDAPI and the Android Input API backend are active, they can both detect
+        // the same controller and trigger two SDL_JOYSTICKDEVICEADDED events. The second event
+        // causes crashes in SDL_UpdateJoysticks because SDL3 ends up with two conflicting
+        // joystick entries for the same physical device.
+        // Set this hint before any SDL_Init(SDL_INIT_JOYSTICK) call (Controlify via JNA, or
+        // our initializeControllerSubsystems). SDL hints are process-wide and persist.
+        void *sdl3_handle_hint = dlopen("libSDL3.so", RTLD_NOW);
+        if (sdl3_handle_hint != NULL) {
+            typedef int (*SDL_SetHint_t)(const char *name, const char *value);
+            SDL_SetHint_t sdl_set_hint = (SDL_SetHint_t)dlsym(sdl3_handle_hint, "SDL_SetHint");
+            if (sdl_set_hint != NULL) {
+                sdl_set_hint("SDL_JOYSTICK_HIDAPI", "0");
+                __android_log_print(ANDROID_LOG_INFO, "SDL_Hint", "Disabled HIDAPI joystick backend to prevent double detection");
+            } else {
+                __android_log_print(ANDROID_LOG_WARN, "SDL_Hint", "SDL_SetHint symbol not found");
+            }
+        } else {
+            __android_log_print(ANDROID_LOG_WARN, "SDL_Hint", "libSDL3.so not loaded yet, HIDAPI hint not set");
+        }
     }
 
     if(pojav_environ->dalvikJavaVMPtr == vm) {
@@ -69,7 +110,7 @@ jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
         registerFunctions(env);
     }
     pojav_environ->isGrabbing = JNI_FALSE;
-    
+
     return JNI_VERSION_1_4;
 }
 
@@ -119,6 +160,9 @@ void pojavPumpEvents(void* window) {
                 break;
             case EVENT_TYPE_MOUSE_BUTTON:
                 if(pojav_environ->GLFW_invoke_MouseButton) pojav_environ->GLFW_invoke_MouseButton(window, event.i1, event.i2, event.i3);
+                break;
+            case EVENT_TYPE_CURSOR_ENTER:
+                if(pojav_environ->GLFW_invoke_CursorEnter) pojav_environ->GLFW_invoke_CursorEnter(window, event.i1);
                 break;
             case EVENT_TYPE_SCROLL:
                 if(pojav_environ->GLFW_invoke_Scroll) pojav_environ->GLFW_invoke_Scroll(window, event.i1, event.i2);
@@ -174,33 +218,34 @@ void pojavStopPumping() {
 
 JNIEXPORT void JNICALL
 Java_org_lwjgl_glfw_GLFW_nglfwGetCursorPos(JNIEnv *env, __attribute__((unused)) jclass clazz, __attribute__((unused)) jlong window, jobject xpos,
-                                          jobject ypos) {
-    *(double*)(*env)->GetDirectBufferAddress(env, xpos) = pojav_environ->cursorX;
-    *(double*)(*env)->GetDirectBufferAddress(env, ypos) = pojav_environ->cursorY;
+        jobject ypos) {
+*(double*)(*env)->GetDirectBufferAddress(env, xpos) = pojav_environ->cursorX;
+*(double*)(*env)->GetDirectBufferAddress(env, ypos) = pojav_environ->cursorY;
 }
 
-JNIEXPORT void JNICALL JavaCritical_org_lwjgl_glfw_GLFW_nglfwGetCursorPosA(__attribute__((unused)) jlong window, jint lengthx, jdouble* xpos, jint lengthy, jdouble* ypos) {
-    *xpos = pojav_environ->cursorX;
-    *ypos = pojav_environ->cursorY;
+JNIEXPORT void JNICALL
+JavaCritical_org_lwjgl_glfw_GLFW_nglfwGetCursorPosA(__attribute__((unused)) jlong window, jint lengthx, jdouble* xpos, jint lengthy, jdouble* ypos) {
+*xpos = pojav_environ->cursorX;
+*ypos = pojav_environ->cursorY;
 }
 
 JNIEXPORT void JNICALL
 Java_org_lwjgl_glfw_GLFW_nglfwGetCursorPosA(JNIEnv *env, __attribute__((unused)) jclass clazz, __attribute__((unused)) jlong window,
-                                            jdoubleArray xpos, jdoubleArray ypos) {
-    (*env)->SetDoubleArrayRegion(env, xpos, 0,1, &pojav_environ->cursorX);
-    (*env)->SetDoubleArrayRegion(env, ypos, 0,1, &pojav_environ->cursorY);
+jdoubleArray xpos, jdoubleArray ypos) {
+(*env)->SetDoubleArrayRegion(env, xpos, 0,1, &pojav_environ->cursorX);
+(*env)->SetDoubleArrayRegion(env, ypos, 0,1, &pojav_environ->cursorY);
 }
 
 JNIEXPORT void JNICALL JavaCritical_org_lwjgl_glfw_GLFW_glfwSetCursorPos(__attribute__((unused)) jlong window, jdouble xpos,
-                                                                         jdouble ypos) {
-    pojav_environ->cLastX = pojav_environ->cursorX = xpos;
-    pojav_environ->cLastY = pojav_environ->cursorY = ypos;
+        jdouble ypos) {
+pojav_environ->cLastX = pojav_environ->cursorX = xpos;
+pojav_environ->cLastY = pojav_environ->cursorY = ypos;
 }
 
 JNIEXPORT void JNICALL
 Java_org_lwjgl_glfw_GLFW_glfwSetCursorPos(__attribute__((unused)) JNIEnv *env, __attribute__((unused)) jclass clazz, __attribute__((unused)) jlong window, jdouble xpos,
-                                          jdouble ypos) {
-    JavaCritical_org_lwjgl_glfw_GLFW_glfwSetCursorPos(window, xpos, ypos);
+        jdouble ypos) {
+JavaCritical_org_lwjgl_glfw_GLFW_glfwSetCursorPos(window, xpos, ypos);
 }
 
 
@@ -259,6 +304,15 @@ void installEMUIIteratorMititgation() {
 void critical_set_stackqueue(jboolean use_input_stack_queue) {
     pojav_environ->isUseStackQueueCall = (int) use_input_stack_queue;
 }
+// Cursor shapes are desktop-only. Android has no native cursor to change.
+void critical_set_cursor_shape(jint shape) {
+    (void) shape; // no-op
+}
+void noncritical_set_cursor_shape(__attribute__((unused)) JNIEnv* env,
+                                  __attribute__((unused)) jclass clazz,
+                                  jint shape) {
+    (void) shape; // no-op
+}
 
 void noncritical_set_stackqueue(__attribute__((unused)) JNIEnv *env, __attribute__((unused)) jclass clazz, jboolean use_input_stack_queue) {
     critical_set_stackqueue(use_input_stack_queue);
@@ -270,10 +324,17 @@ JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNI
 #endif
 
     JNIEnv *dalvikEnv;
+    // Attach to the Android (ART) JVM to call clipboard APIs.
+    // We intentionally do NOT call DetachCurrentThread afterwards: SDL3 also attaches the
+    // Render thread to ART and caches the JNIEnv in its mThreadKey TLS slot. Calling
+    // DetachCurrentThread here invalidates that cached env, causing the next
+    // SDL_UpdateJoysticks() call to use a stale pointer and crash with SIGSEGV at 0xb8
+    // (DeleteLocalRef on a null JNINativeInterface_). The ART attachment for this thread
+    // is safe to leave live — ART will clean it up when the thread exits.
     (*pojav_environ->dalvikJavaVMPtr)->AttachCurrentThread(pojav_environ->dalvikJavaVMPtr, &dalvikEnv, NULL);
     assert(dalvikEnv != NULL);
     assert(pojav_environ->bridgeClazz != NULL);
-    
+
     LOGD("Clipboard: Converting string\n");
     char *copySrcC;
     jstring copyDst = NULL;
@@ -283,14 +344,25 @@ JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNI
     }
 
     LOGD("Clipboard: Calling 2nd\n");
-    jstring pasteDst = convertStringJVM(dalvikEnv, env, (jstring) (*dalvikEnv)->CallStaticObjectMethod(dalvikEnv, pojav_environ->bridgeClazz, pojav_environ->method_accessAndroidClipboard, action, copyDst));
+    // Extract the result and delete its ART local ref explicitly, since we are no longer
+    // relying on DetachCurrentThread to clean up ART's local ref table for this thread.
+    jstring artResult = (jstring) (*dalvikEnv)->CallStaticObjectMethod(dalvikEnv, pojav_environ->bridgeClazz, pojav_environ->method_accessAndroidClipboard, action, copyDst);
+    jstring pasteDst = convertStringJVM(dalvikEnv, env, artResult);
+    if (artResult != NULL) {
+        (*dalvikEnv)->DeleteLocalRef(dalvikEnv, artResult);
+    }
 
     if (copySrc) {
-        (*dalvikEnv)->DeleteLocalRef(dalvikEnv, copyDst);    
+        (*dalvikEnv)->DeleteLocalRef(dalvikEnv, copyDst);
         (*env)->ReleaseByteArrayElements(env, copySrc, (jbyte *)copySrcC, 0);
     }
-    (*pojav_environ->dalvikJavaVMPtr)->DetachCurrentThread(pojav_environ->dalvikJavaVMPtr);
     return pasteDst;
+}
+JNIEXPORT void JNICALL
+Java_org_lwjgl_glfw_CallbackBridge_nativeSetCursorShape(JNIEnv* env, jclass clazz, jint shape) {
+(void)env; (void)clazz;
+// Desktop cursor shapes don’t exist on Android, so just ignore.
+(void)shape;
 }
 
 JNIEXPORT jboolean JNICALL JavaCritical_org_lwjgl_glfw_CallbackBridge_nativeSetInputReady(jboolean inputReady) {
@@ -307,11 +379,12 @@ JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetInputRead
 }
 
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetGrabbing(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jboolean grabbing) {
-    JNIEnv *dalvikEnv;
-    (*pojav_environ->dalvikJavaVMPtr)->AttachCurrentThread(pojav_environ->dalvikJavaVMPtr, &dalvikEnv, NULL);
-    (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, pojav_environ->bridgeClazz, pojav_environ->method_onGrabStateChanged, grabbing);
-    (*pojav_environ->dalvikJavaVMPtr)->DetachCurrentThread(pojav_environ->dalvikJavaVMPtr);
-    pojav_environ->isGrabbing = grabbing;
+JNIEnv *dalvikEnv;
+// Same as nativeClipboard: do NOT call DetachCurrentThread — SDL3 shares this thread's
+// ART attachment via mThreadKey and a detach here would corrupt SDL3's cached JNIEnv.
+(*pojav_environ->dalvikJavaVMPtr)->AttachCurrentThread(pojav_environ->dalvikJavaVMPtr, &dalvikEnv, NULL);
+(*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, pojav_environ->bridgeClazz, pojav_environ->method_onGrabStateChanged, grabbing);
+pojav_environ->isGrabbing = grabbing;
 }
 
 jboolean critical_send_char(jchar codepoint) {
@@ -345,6 +418,7 @@ jboolean critical_send_char_mods(jchar codepoint, jint mods) {
 jboolean noncritical_send_char_mods(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jchar codepoint, jint mods) {
     return critical_send_char_mods(codepoint, mods);
 }
+// Need to add this back after for Snapshot builds
 /*
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSendCursorEnter(JNIEnv* env, jclass clazz, jint entered) {
     if (pojav_environ->GLFW_invoke_CursorEnter && pojav_environ->isInputReady) {
@@ -463,42 +537,44 @@ void noncritical_send_scroll(__attribute__((unused)) JNIEnv* env, __attribute__(
 
 
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_GLFW_nglfwSetShowingWindow(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jlong window) {
-    pojav_environ->showingWindow = (long) window;
+pojav_environ->showingWindow = (long) window;
 }
 
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetWindowAttrib(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jint attrib, jint value) {
-    // Check for stack queue no longer necessary here as the JVM crash's origin is resolved
-    if (!pojav_environ->showingWindow) {
-        // If the window is not shown, there is nothing to do yet.
-        return;
-    }
+// Check for stack queue no longer necessary here as the JVM crash's origin is resolved
+if (!pojav_environ->showingWindow) {
+// If the window is not shown, there is nothing to do yet.
+return;
+}
 
-    // We cannot use pojav_environ->runtimeJNIEnvPtr_JRE here because that environment is attached
-    // on the thread that loaded pojavexec (which is the thread that first references the GLFW class)
-    // But this method is only called from the Android UI thread
-    // Technically the better solution would be to have a permanently attached env pointer stored
-    // in environ for the Android UI thread but this is the only place that uses it
-    // (very rarely, only in lifecycle callbacks) so i dont care
-    JavaVM* jvm = pojav_environ->runtimeJavaVMPtr;
-    JNIEnv *jvm_env = NULL;
-    jint env_result = (*jvm)->GetEnv(jvm, (void**)&jvm_env, JNI_VERSION_1_4);
-    if(env_result == JNI_EDETACHED) {
-        env_result = (*jvm)->AttachCurrentThread(jvm, &jvm_env, NULL);
-    }
-    if(env_result != JNI_OK) {
-        printf("input_bridge nativeSetWindowAttrib() JNI call failed: %i\n", env_result);
-        return;
-    }
-    (*jvm_env)->CallStaticVoidMethod(
-            jvm_env, pojav_environ->vmGlfwClass,
-            pojav_environ->method_glftSetWindowAttrib,
-            (jlong) pojav_environ->showingWindow, attrib, value
-    );
+// We cannot use pojav_environ->runtimeJNIEnvPtr_JRE here because that environment is attached
+// on the thread that loaded pojavexec (which is the thread that first references the GLFW class)
+// But this method is only called from the Android UI thread
+// Technically the better solution would be to have a permanently attached env pointer stored
+// in environ for the Android UI thread but this is the only place that uses it
+// (very rarely, only in lifecycle callbacks) so i dont care
+JavaVM* jvm = pojav_environ->runtimeJavaVMPtr;
+JNIEnv *jvm_env = NULL;
+jint env_result = (*jvm)->GetEnv(jvm, (void**)&jvm_env, JNI_VERSION_1_4);
+if(env_result == JNI_EDETACHED) {
+env_result = (*jvm)->AttachCurrentThread(jvm, &jvm_env, NULL);
+}
+if(env_result != JNI_OK) {
+printf("input_bridge nativeSetWindowAttrib() JNI call failed: %i\n", env_result);
+return;
+}
+(*jvm_env)->CallStaticVoidMethod(
+        jvm_env, pojav_environ->vmGlfwClass,
+pojav_environ->method_glftSetWindowAttrib,
+(jlong) pojav_environ->showingWindow, attrib, value
+);
 
-    // Attaching every time is annoying, so stick the attachment to the Android GUI thread around
+// Attaching every time is annoying, so stick the attachment to the Android GUI thread around
 }
 const static JNINativeMethod critical_fcns[] = {
         {"nativeSetUseInputStackQueue", "(Z)V", critical_set_stackqueue},
+        {"nativeSetCursorShape", "(I)V", critical_set_cursor_shape},
+        {"nativeSetCursorShape", "(I)V", noncritical_set_cursor_shape},
         {"nativeSendChar", "(C)Z", critical_send_char},
         {"nativeSendCharMods", "(CI)Z", critical_send_char_mods},
         {"nativeSendKey", "(IIII)V", critical_send_key},
@@ -510,6 +586,7 @@ const static JNINativeMethod critical_fcns[] = {
 
 const static JNINativeMethod noncritical_fcns[] = {
         {"nativeSetUseInputStackQueue", "(Z)V", noncritical_set_stackqueue},
+        {"nativeSetCursorShape", "(I)V", noncritical_set_cursor_shape},
         {"nativeSendChar", "(C)Z", noncritical_send_char},
         {"nativeSendCharMods", "(CI)Z", noncritical_send_char_mods},
         {"nativeSendKey", "(IIII)V", noncritical_send_key},
@@ -552,13 +629,52 @@ static bool tryCriticalNative(JNIEnv *env) {
 static void registerFunctions(JNIEnv *env) {
     bool use_critical_cc = tryCriticalNative(env);
     jclass bridge_class = (*env)->FindClass(env, "org/lwjgl/glfw/CallbackBridge");
-    if(use_critical_cc) {
+
+    if (use_critical_cc) {
         __android_log_print(ANDROID_LOG_INFO, "pojavexec", "CriticalNative is available. Enjoy the 4.6x times faster input!");
-    }else{
+    } else {
         __android_log_print(ANDROID_LOG_INFO, "pojavexec", "CriticalNative is not available. Upgrade, maybe?");
     }
-    (*env)->RegisterNatives(env,
-                            bridge_class,
-                            use_critical_cc ? critical_fcns : noncritical_fcns,
-                            sizeof(critical_fcns)/sizeof(critical_fcns[0]));
+
+    const JNINativeMethod *methods = use_critical_cc ? critical_fcns : noncritical_fcns;
+    const jint method_count = use_critical_cc
+                              ? sizeof(critical_fcns) / sizeof(critical_fcns[0])
+                              : sizeof(noncritical_fcns) / sizeof(noncritical_fcns[0]);
+
+    (*env)->RegisterNatives(env, bridge_class, methods, method_count);
+}
+
+#define SDL_INIT_JOYSTICK   0x00000200u
+#define SDL_INIT_GAMEPAD    0x00002000u
+#define SDL_INIT_EVENTS     0x00004000u
+
+static inline void initSubsystem(void) {
+    typedef int (*SDL_Init_Func)(uint32_t flags);
+    typedef int (*SDL_SetHint_Func)(const char *name, const char *value);
+    void* handle = dlopen("libSDL3.so", RTLD_NOW);
+    if (handle == NULL) {
+        __android_log_print(ANDROID_LOG_WARN, "SDL_Init", "Failed to dlopen libSDL3.so: %s", dlerror());
+        return;
+    }
+    // Disable HIDAPI before SDL_Init to prevent double detection (Android Input API + HIDAPI
+    // would both detect the same controller, causing two SDL_JOYSTICKDEVICEADDED events and
+    // a crash in SDL_UpdateJoysticks).
+    SDL_SetHint_Func SDL_SetHint = (SDL_SetHint_Func)dlsym(handle, "SDL_SetHint");
+    if (SDL_SetHint != NULL) {
+        SDL_SetHint("SDL_JOYSTICK_HIDAPI", "0");
+        __android_log_print(ANDROID_LOG_INFO, "SDL_Init", "Disabled HIDAPI joystick backend before SDL_Init");
+    }
+    SDL_Init_Func SDL_Init = (SDL_Init_Func)dlsym(handle, "SDL_Init");
+    if (SDL_Init == NULL) {
+        __android_log_print(ANDROID_LOG_WARN, "SDL_Init", "Failed to find SDL_Init symbol");
+        return;
+    }
+    int result = SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS);
+    __android_log_print(ANDROID_LOG_INFO, "SDL_Init", "SDL_Init result: %d", result);
+}
+
+JNIEXPORT void JNICALL
+Java_net_kdt_pojavlaunch_Tools_00024SDL_initializeControllerSubsystems(JNIEnv *env, jclass clazz) {
+(void)env; (void)clazz;
+initSubsystem();
 }

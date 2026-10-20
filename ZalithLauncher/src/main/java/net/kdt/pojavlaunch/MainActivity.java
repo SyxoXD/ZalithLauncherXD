@@ -120,6 +120,7 @@ public class MainActivity extends BaseActivity implements ControlButtonMenuListe
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        CallbackBridge.init(this);
         minecraftVersion = getIntent().getParcelableExtra(INTENT_VERSION);
         if (minecraftVersion == null) throw new RuntimeException("The game version is not selected!");
 

@@ -13,7 +13,7 @@ LOCAL_PATH := $(HERE_PATH)
 
 
 include $(CLEAR_VARS)
-LOCAL_LDLIBS := -ldl -llog -landroid
+LOCAL_LDLIBS := -ldl -llog -landroid -lEGL -lGLESv2
 LOCAL_MODULE := pojavexec
 LOCAL_SHARED_LIBRARIES := driver_helper
 LOCAL_CFLAGS += -rdynamic
@@ -37,7 +37,6 @@ LOCAL_SRC_FILES := \
 
 ifeq ($(TARGET_ARCH_ABI),arm64-v8a)
 LOCAL_CFLAGS += -DADRENO_POSSIBLE
-LOCAL_LDLIBS += -lEGL -lGLESv2
 endif
 include $(BUILD_SHARED_LIBRARY)
 
@@ -51,7 +50,7 @@ include $(BUILD_SHARED_LIBRARY)
 
 
 include $(CLEAR_VARS)
-LOCAL_LDLIBS := -ldl -llog -landroid
+LOCAL_LDLIBS := -ldl -llog -landroid -lEGL -lGLESv2
 LOCAL_MODULE := driver_helper
 LOCAL_SRC_FILES := \
     driver_helper/driver_helper.c \
@@ -60,7 +59,6 @@ LOCAL_CFLAGS += -g -rdynamic
 
 ifeq ($(TARGET_ARCH_ABI),arm64-v8a)
 LOCAL_CFLAGS += -DADRENO_POSSIBLE
-LOCAL_LDLIBS += -lEGL -lGLESv2
 endif
 include $(BUILD_SHARED_LIBRARY)
 
