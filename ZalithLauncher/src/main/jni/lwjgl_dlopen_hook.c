@@ -11,54 +11,98 @@
 #include <dlfcn.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 extern void* maybe_load_vulkan();
 
-/**
- * Basically a verbatim implementation of ndlopen(), found at
- * https://github.com/PojavLauncherTeam/lwjgl3/blob/3.3.1/modules/lwjgl/core/src/generated/c/linux/org_lwjgl_system_linux_DynamicLinkLoader.c#L11
- * but with our own additions for stuff like vulkanmod.
+#define LWJGL_HOOK_TAG "LwjglLinkerHook"
+
+/*
+ * Android Vulkan loaders are normally exposed as libvulkan.so. Some LWJGL
+ * integrations may pass a full path or the versioned SONAME instead, so match
+ * the basename rather than assuming the name starts at byte zero.
+ */
+static const char* library_basename(const char* filename) {
+    if (filename == NULL) return "";
+    const char* slash = strrchr(filename, '/');
+    return slash != NULL ? slash + 1 : filename;
+}
+
+static int is_vulkan_loader(const char* filename) {
+    const char* base = library_basename(filename);
+    return strcmp(base, "libvulkan.so") == 0 ||
+           strcmp(base, "libvulkan.so.1") == 0;
+}
+
+/*
+ * LWJGL's ndlopen() hook lets the launcher provide its selected Vulkan loader
+ * and perform dlopen() from the launcher process namespace. Keep the original
+ * dlopen path for all non-Vulkan libraries (including mod-provided libraries).
  */
 static jlong ndlopen_bugfix(__attribute__((unused)) JNIEnv *env,
-                            __attribute__((unused)) jclass class,
+                            __attribute__((unused)) jclass clazz,
                             jlong filename_ptr,
                             jint jmode) {
     const char* filename = (const char*) filename_ptr;
-
-    // Oveeride vulkan loading to let us load vulkan ourselves
-    if(strstr(filename, "libvulkan.so") == filename) {
-        printf("LWJGL linkerhook: replacing load for libvulkan.so with custom driver\n");
-        return (jlong) maybe_load_vulkan();
+    if (filename == NULL) {
+        __android_log_print(ANDROID_LOG_ERROR, LWJGL_HOOK_TAG,
+                            "LWJGL ndlopen received a null library name");
+        return (jlong) 0;
     }
 
-    // This hook also serves the task of mitigating a bug: the idea is that since, on Android 10 and
-    // earlier, the linker doesn't really do namespace nesting.
-    // It is not a problem as most of the libraries are in the launcher path, but when you try to run
-    // VulkanMod which loads shaderc outside of the default jni libs directory through this method,
-    // it can't load it because the path is not in the allowed paths for the anonymous namesapce.
-    // This method fixes the issue by being in libpojavexec, and thus being in the classloader namespace
+    if (is_vulkan_loader(filename)) {
+        __android_log_print(ANDROID_LOG_INFO, LWJGL_HOOK_TAG,
+                            "Redirecting Vulkan load request: %s", filename);
+        void* handle = maybe_load_vulkan();
+        if (handle == NULL) {
+            __android_log_print(ANDROID_LOG_ERROR, LWJGL_HOOK_TAG,
+                                "Custom Vulkan loader failed for request: %s", filename);
+        }
+        return (jlong) handle;
+    }
 
-    int mode = (int)jmode;
-    return (jlong) dlopen(filename, mode);
+    int mode = (int) jmode;
+    dlerror();
+    void* handle = dlopen(filename, mode);
+    if (handle == NULL) {
+        const char* error = dlerror();
+        __android_log_print(ANDROID_LOG_WARN, LWJGL_HOOK_TAG,
+                            "dlopen failed for %s: %s", filename,
+                            error != NULL ? error : "unknown error");
+    }
+    return (jlong) handle;
 }
 
-/**
- * Install the LWJGL dlopen hook. This allows us to mitigate linker bugs and add custom library overrides.
+/*
+ * Install the LWJGL dlopen hook. The Java signature must remain (JI)J.
  */
 void installLwjglDlopenHook() {
-    __android_log_print(ANDROID_LOG_INFO, "LwjglLinkerHook", "Installing LWJGL dlopen() hook");
+    __android_log_print(ANDROID_LOG_INFO, LWJGL_HOOK_TAG,
+                        "Installing LWJGL dlopen() hook");
+
     JNIEnv* env = pojav_environ->runtimeJNIEnvPtr_JRE;
-    jclass dynamicLinkLoader = (*env)->FindClass(env, "org/lwjgl/system/linux/DynamicLinkLoader");
-    if(dynamicLinkLoader == NULL) {
-        __android_log_print(ANDROID_LOG_ERROR, "LwjglLinkerHook", "Failed to find the target class");
+    if (env == NULL) {
+        __android_log_print(ANDROID_LOG_ERROR, LWJGL_HOOK_TAG,
+                            "JRE JNI environment is unavailable");
+        return;
+    }
+
+    jclass dynamicLinkLoader = (*env)->FindClass(
+            env, "org/lwjgl/system/linux/DynamicLinkLoader");
+    if (dynamicLinkLoader == NULL) {
+        __android_log_print(ANDROID_LOG_ERROR, LWJGL_HOOK_TAG,
+                            "Failed to find DynamicLinkLoader");
         (*env)->ExceptionClear(env);
         return;
     }
+
     JNINativeMethod ndlopenMethod[] = {
-            {"ndlopen", "(JI)J", &ndlopen_bugfix}
+            {"ndlopen", "(JI)J", (void*) &ndlopen_bugfix}
     };
-    if((*env)->RegisterNatives(env, dynamicLinkLoader, ndlopenMethod, 1) != 0) {
-        __android_log_print(ANDROID_LOG_ERROR, "LwjglLinkerHook", "Failed to register the hooked method");
+    if ((*env)->RegisterNatives(env, dynamicLinkLoader, ndlopenMethod, 1) != 0) {
+        __android_log_print(ANDROID_LOG_ERROR, LWJGL_HOOK_TAG,
+                            "Failed to register the ndlopen hook");
         (*env)->ExceptionClear(env);
     }
+    (*env)->DeleteLocalRef(env, dynamicLinkLoader);
 }
